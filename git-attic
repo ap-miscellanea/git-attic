@@ -1,0 +1,43 @@
+#!/usr/bin/env perl
+use 5.014;
+use warnings;
+use List::Util 'max';
+
+my %action = (
+	list => sub {
+		my $opt_verbose = 0;
+		$opt_verbose = 1 if grep { '-v' eq $_ or '--verbose' eq $_ } @_;
+
+		my $format = '%(refname)';
+		$format .= ' %(objectname:short) %(subject)' if $opt_verbose;
+
+		open my $pipe, '-|', git => 'for-each-ref', 'refs/archive/', "--format=$format" or die "$!\n";
+		my @line = readline $pipe;
+		s!\Arefs/archive/!! for @line;
+
+		if ( $opt_verbose ) {
+			my $w = max map { m!\A([^ ]+)! ? length $1 : die } @line;
+			s!\A([^ ]+)!sprintf "%-*s", $w, $1!e for @line;
+		}
+
+		print @line;
+	},
+	save => sub {
+		my ( $branch, $object ) = @_;
+		$object //= 'HEAD';
+		exec git => 'update-ref', "refs/archive/$branch", $object, "";
+	},
+	rm => sub {
+		my ( $branch ) = @_;
+		exec git => 'update-ref', -d => "refs/archive/$branch";
+	},
+	fetch => sub {
+		exec git => fetch => origin => -v => 'refs/archive/*:refs/archive/*';
+	},
+	push => sub {
+		exec git => push => origin => -v => 'refs/archive/*:refs/archive/*';
+	},
+);
+
+my $cmd = @ARGV && $ARGV[0] !~ /^-/ ? shift @ARGV : 'list';
+$action{ $cmd }->( @ARGV );
